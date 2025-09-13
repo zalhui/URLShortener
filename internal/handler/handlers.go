@@ -81,7 +81,7 @@ func (us *URLShortener) shortenURLHandler(w http.ResponseWriter, r *http.Request
 	}
 
 	originalURL, err := io.ReadAll(r.Body)
-	if err != nil {
+	if err != nil || len(originalURL) == 0 {
 		http.Error(w, "Failed to read request body", http.StatusBadRequest)
 		return
 	}
