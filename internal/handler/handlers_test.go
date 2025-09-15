@@ -49,15 +49,15 @@ func TestShortenURLHandler(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			us := NewURLShortener()
 
+			r := us.URLRouter()
+
 			req, err := http.NewRequest(tt.method, "/", bytes.NewBufferString(tt.body))
 			if err != nil {
 				t.Fatal(err)
 			}
 			req.Header.Set("Content-Type", tt.contentType)
 			w := httptest.NewRecorder()
-
-			us.shortenURLHandler(w, req)
-
+			r.ServeHTTP(w, req)
 			if w.Code != tt.wantCode {
 				t.Errorf("shortenURLHandler() = %v, want %v", w.Code, tt.wantCode)
 			}
@@ -97,12 +97,14 @@ func TestGetOriginalURLHandler(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			r := shortener.URLRouter()
+
 			req, err := http.NewRequest(tt.method, fmt.Sprintf("/%s", tt.id), nil)
 			if err != nil {
 				t.Fatal(err)
 			}
 			w := httptest.NewRecorder()
-			shortener.getOriginalURLHandler(w, req)
+			r.ServeHTTP(w, req)
 			if w.Code != tt.wantCode {
 				t.Errorf("getOriginalURLHandler() = %v, want %v", w.Code, tt.wantCode)
 			}
