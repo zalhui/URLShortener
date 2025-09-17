@@ -11,14 +11,17 @@ import (
 
 func main() {
 	cfg := config.NewConfig()
-	cfg.ParseFlags()
+	err := cfg.LoadConfig()
+	if err != nil {
+		log.Fatal(err)
+	}
 	port := strings.Split(cfg.ServerAddr, ":")[1]
 
 	shortener := handler.NewURLShortener(cfg.BaseURL)
 
 	log.Printf("Server started on %s", cfg.ServerAddr)
 
-	err := http.ListenAndServe(":"+port, shortener.URLRouter())
+	err = http.ListenAndServe(":"+port, shortener.URLRouter())
 	if err != nil {
 		log.Fatal(err)
 	}
