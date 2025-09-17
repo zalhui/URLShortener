@@ -15,12 +15,14 @@ type URLShortener struct {
 	mu        sync.RWMutex
 	urls      map[string]string
 	shortened map[string]string
+	baseURL   string
 }
 
-func NewURLShortener() *URLShortener {
+func NewURLShortener(baseURL string) *URLShortener {
 	return &URLShortener{
 		urls:      make(map[string]string),
 		shortened: make(map[string]string),
+		baseURL:   baseURL,
 	}
 }
 
@@ -38,7 +40,7 @@ func (us *URLShortener) shortenURL(originalURL string) (string, error) {
 	defer us.mu.Unlock()
 
 	if shortID, exists := us.shortened[originalURL]; exists {
-		return fmt.Sprintf("http://localhost:8080/%s", shortID), nil
+		return fmt.Sprintf("%s%s", us.baseURL, shortID), nil
 	}
 
 	shortID, err := generateShortID()
@@ -59,7 +61,7 @@ func (us *URLShortener) shortenURL(originalURL string) (string, error) {
 	us.urls[shortID] = originalURL
 	us.shortened[originalURL] = shortID
 
-	return fmt.Sprintf("http://localhost:8080/%s", shortID), nil
+	return fmt.Sprintf("%s%s", us.baseURL, shortID), nil
 }
 
 func (us *URLShortener) getOriginalURL(shortID string) (string, bool) {

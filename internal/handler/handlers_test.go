@@ -47,7 +47,7 @@ func TestShortenURLHandler(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			us := NewURLShortener()
+			us := NewURLShortener("http://localhost:8080/")
 
 			r := us.URLRouter()
 
@@ -66,7 +66,7 @@ func TestShortenURLHandler(t *testing.T) {
 }
 
 func TestGetOriginalURLHandler(t *testing.T) {
-	shortener := NewURLShortener()
+	shortener := NewURLShortener("http://localhost:8080/")
 
 	shortener.urls["123"] = "https://google.com"
 

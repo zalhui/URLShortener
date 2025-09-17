@@ -3,15 +3,22 @@ package main
 import (
 	"log"
 	"net/http"
+	"strings"
 
+	"github.com/zalhui/URLShortener/internal/config"
 	"github.com/zalhui/URLShortener/internal/handler"
 )
 
 func main() {
-	shortener := handler.NewURLShortener()
+	cfg := config.NewConfig()
+	cfg.ParseFlags()
+	port := strings.Split(cfg.ServerAddr, ":")[1]
 
-	log.Println("Server started on :8080")
-	err := http.ListenAndServe(":8080", shortener.URLRouter())
+	shortener := handler.NewURLShortener(cfg.BaseURL)
+
+	log.Printf("Server started on %s", cfg.ServerAddr)
+
+	err := http.ListenAndServe(":"+port, shortener.URLRouter())
 	if err != nil {
 		log.Fatal(err)
 	}
