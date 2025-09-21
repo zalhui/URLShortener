@@ -6,9 +6,11 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"sync"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/zalhui/URLShortener/internal/middleware"
 )
 
 type URLShortener struct {
@@ -104,6 +106,11 @@ func (us *URLShortener) getOriginalURLHandler(w http.ResponseWriter, r *http.Req
 		return
 	}
 
+	//ensure that the original URL starts with http:// or https://
+	if !strings.HasPrefix(originalURL, "http://") && !strings.HasPrefix(originalURL, "https://") {
+		originalURL = "https://" + originalURL
+	}
+
 	w.Header().Set("Location", originalURL)
 	w.WriteHeader(http.StatusTemporaryRedirect)
 }
@@ -111,6 +118,7 @@ func (us *URLShortener) getOriginalURLHandler(w http.ResponseWriter, r *http.Req
 func (us *URLShortener) URLRouter() chi.Router {
 	r := chi.NewRouter()
 
+	r.Use(middleware.LoggingMidlleware)
 	r.Get("/{shortID}", us.getOriginalURLHandler)
 	r.Post("/", us.shortenURLHandler)
 
