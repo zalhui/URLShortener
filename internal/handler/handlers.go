@@ -5,21 +5,24 @@ import (
 	"encoding/base64"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"sync"
+
+	"github.com/go-chi/chi/v5"
 )
 
 type URLShortener struct {
 	mu        sync.RWMutex
 	urls      map[string]string
 	shortened map[string]string
+	baseURL   string
 }
 
-func NewURLShortener() *URLShortener {
+func NewURLShortener(baseURL string) *URLShortener {
 	return &URLShortener{
 		urls:      make(map[string]string),
 		shortened: make(map[string]string),
+		baseURL:   baseURL,
 	}
 }
 
@@ -37,7 +40,7 @@ func (us *URLShortener) shortenURL(originalURL string) (string, error) {
 	defer us.mu.Unlock()
 
 	if shortID, exists := us.shortened[originalURL]; exists {
-		return fmt.Sprintf("http://localhost:8080/%s", shortID), nil
+		return fmt.Sprintf("%s%s", us.baseURL, shortID), nil
 	}
 
 	shortID, err := generateShortID()
@@ -58,7 +61,7 @@ func (us *URLShortener) shortenURL(originalURL string) (string, error) {
 	us.urls[shortID] = originalURL
 	us.shortened[originalURL] = shortID
 
-	return fmt.Sprintf("http://localhost:8080/%s", shortID), nil
+	return fmt.Sprintf("%s%s", us.baseURL, shortID), nil
 }
 
 func (us *URLShortener) getOriginalURL(shortID string) (string, bool) {
@@ -70,11 +73,6 @@ func (us *URLShortener) getOriginalURL(shortID string) (string, bool) {
 }
 
 func (us *URLShortener) shortenURLHandler(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
 	if r.Header.Get("Content-Type") != "text/plain" {
 		http.Error(w, "Unsupported Content-Type", http.StatusBadRequest)
 		return
@@ -98,12 +96,7 @@ func (us *URLShortener) shortenURLHandler(w http.ResponseWriter, r *http.Request
 }
 
 func (us *URLShortener) getOriginalURLHandler(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
-	shortID := r.URL.Path[1:]
+	shortID := chi.URLParam(r, "shortID")
 
 	originalURL, exists := us.getOriginalURL(shortID)
 	if !exists {
@@ -115,21 +108,11 @@ func (us *URLShortener) getOriginalURLHandler(w http.ResponseWriter, r *http.Req
 	w.WriteHeader(http.StatusTemporaryRedirect)
 }
 
-func (us *URLShortener) rootHandler(w http.ResponseWriter, r *http.Request) {
-	switch r.Method {
-	case http.MethodPost:
-		us.shortenURLHandler(w, r)
-	case http.MethodGet:
-		us.getOriginalURLHandler(w, r)
-	default:
-		http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
-	}
-}
+func (us *URLShortener) URLRouter() chi.Router {
+	r := chi.NewRouter()
 
-func (us *URLShortener) StartServer() error {
-	http.HandleFunc("/", us.rootHandler)
+	r.Get("/{shortID}", us.getOriginalURLHandler)
+	r.Post("/", us.shortenURLHandler)
 
-	log.Println("Server started on :8080")
-	return http.ListenAndServe(":8080", nil)
-
+	return r
 }
