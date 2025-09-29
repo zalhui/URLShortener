@@ -17,3 +17,8 @@ func Init() error {
 
 	return nil
 }
+
+func InitTest() {
+	logger := zap.NewNop()
+	Sugar = *logger.Sugar()
+}

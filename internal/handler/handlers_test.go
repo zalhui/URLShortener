@@ -6,9 +6,13 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"github.com/zalhui/URLShortener/internal/logger"
 )
 
 func TestShortenURLHandler(t *testing.T) {
+	logger.InitTest()
+	defer logger.Sugar.Sync()
 	tests := []struct {
 		name        string
 		method      string
@@ -48,7 +52,6 @@ func TestShortenURLHandler(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			us := NewURLShortener("http://localhost:8080/")
-
 			r := us.URLRouter()
 
 			req, err := http.NewRequest(tt.method, "/", bytes.NewBufferString(tt.body))
@@ -107,6 +110,65 @@ func TestGetOriginalURLHandler(t *testing.T) {
 			r.ServeHTTP(w, req)
 			if w.Code != tt.wantCode {
 				t.Errorf("getOriginalURLHandler() = %v, want %v", w.Code, tt.wantCode)
+			}
+		})
+	}
+}
+
+func TestJSONShortenHandler(t *testing.T) {
+	logger.InitTest()
+	defer logger.Sugar.Sync()
+
+	tests := []struct {
+		name        string
+		method      string
+		contentType string
+		body        string
+		wantCode    int
+	}{
+		{
+			name:        "successful shorten",
+			method:      "POST",
+			contentType: "application/json",
+			body:        `{"url": "https://google.com"}`,
+			wantCode:    http.StatusCreated,
+		},
+		{
+			name:        "wrong method",
+			method:      "GET",
+			contentType: "application/json",
+			body:        `{"url": "https://google.com"}`,
+			wantCode:    http.StatusMethodNotAllowed,
+		},
+		{
+			name:        "wrong content type",
+			method:      "POST",
+			contentType: "text/plain",
+			body:        "https://google.com",
+			wantCode:    http.StatusBadRequest,
+		},
+		{
+			name:        "empty body",
+			method:      "POST",
+			contentType: "application/json",
+			body:        "",
+			wantCode:    http.StatusBadRequest,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			us := NewURLShortener("http://localhost:8080/")
+			r := us.URLRouter()
+
+			req, err := http.NewRequest(tt.method, "/api/shorten", bytes.NewBufferString(tt.body))
+			if err != nil {
+				t.Fatal(err)
+			}
+			req.Header.Set("Content-Type", tt.contentType)
+			w := httptest.NewRecorder()
+			r.ServeHTTP(w, req)
+			if w.Code != tt.wantCode {
+				t.Errorf("shortenURLHandler() = %v, want %v", w.Code, tt.wantCode)
 			}
 		})
 	}

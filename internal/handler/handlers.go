@@ -3,6 +3,7 @@ package handler
 import (
 	"crypto/rand"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -18,6 +19,10 @@ type URLShortener struct {
 	urls      map[string]string
 	shortened map[string]string
 	baseURL   string
+}
+
+type ShortenURLRequest struct {
+	URL string `json:"url"`
 }
 
 func NewURLShortener(baseURL string) *URLShortener {
@@ -115,12 +120,37 @@ func (us *URLShortener) getOriginalURLHandler(w http.ResponseWriter, r *http.Req
 	w.WriteHeader(http.StatusTemporaryRedirect)
 }
 
+func (us *URLShortener) JSONShortenHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Header.Get("content-type") != "application/json" {
+		http.Error(w, "Unsupported content-type", http.StatusBadRequest)
+		return
+	}
+
+	var req ShortenURLRequest
+	err := json.NewDecoder(r.Body).Decode(&req)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	shortURL, err := us.shortenURL(req.URL)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(map[string]string{"result": shortURL})
+
+}
+
 func (us *URLShortener) URLRouter() chi.Router {
 	r := chi.NewRouter()
 
 	r.Use(middleware.LoggingMidlleware)
 	r.Get("/{shortID}", us.getOriginalURLHandler)
 	r.Post("/", us.shortenURLHandler)
-
+	r.Post("/api/shorten", us.JSONShortenHandler)
 	return r
 }
