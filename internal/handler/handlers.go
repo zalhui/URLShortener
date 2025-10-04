@@ -1,12 +1,15 @@
 package handler
 
 import (
+	"bufio"
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
+	"os"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -18,19 +21,107 @@ type URLShortener struct {
 	mu        sync.RWMutex
 	urls      map[string]string
 	shortened map[string]string
+	filename  string
 	baseURL   string
+	nextUUID  int
+}
+
+type URLRecord struct {
+	UUID        string `json:"uuid"`
+	OriginalURL string `json:"original_url"`
+	ShortURL    string `json:"short_url"`
 }
 
 type ShortenURLRequest struct {
 	URL string `json:"url"`
 }
 
-func NewURLShortener(baseURL string) *URLShortener {
-	return &URLShortener{
+func NewURLShortener(baseURL string, filename string) *URLShortener {
+	us := &URLShortener{
 		urls:      make(map[string]string),
 		shortened: make(map[string]string),
 		baseURL:   baseURL,
+		filename:  filename,
+		nextUUID:  1,
 	}
+	if filename != "" {
+		if err := us.loadURLsFromFile(filename); err != nil {
+			fmt.Printf("failed to load URLs from file: %v", err)
+		}
+	}
+	return us
+
+}
+
+func (us *URLShortener) loadURLsFromFile(filename string) error {
+	us.mu.Lock()
+	defer us.mu.Unlock()
+
+	file, err := os.Open(filename)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return fmt.Errorf("failed to open file: %w", err)
+	}
+	defer file.Close()
+
+	scanner := bufio.NewScanner(file)
+	maxUUID := 0
+	for scanner.Scan() {
+		var record URLRecord
+		if err := json.Unmarshal(scanner.Bytes(), &record); err != nil {
+			return fmt.Errorf("failed to unmarshal record: %w", err)
+		}
+		uuid, err := strconv.Atoi(record.UUID)
+		if err != nil {
+			continue
+		}
+		if uuid > maxUUID {
+			maxUUID = uuid
+		}
+
+		us.urls[record.ShortURL] = record.OriginalURL
+		us.shortened[record.OriginalURL] = record.ShortURL
+	}
+
+	us.nextUUID = maxUUID + 1
+
+	if err := scanner.Err(); err != nil {
+		return fmt.Errorf("failed to scan file: %w", err)
+	}
+
+	return nil
+}
+
+func (us *URLShortener) saveURLsToFile(uuid, shortID, originalURL string) error {
+	if us.filename == "" {
+		return nil
+	}
+
+	us.mu.RLock()
+	defer us.mu.RUnlock()
+
+	file, err := os.OpenFile(us.filename, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		return fmt.Errorf("failed to open file: %w", err)
+	}
+	defer file.Close()
+
+	record := URLRecord{
+		UUID:        uuid,
+		OriginalURL: originalURL,
+		ShortURL:    fmt.Sprintf("%s%s", us.baseURL, shortID),
+	}
+	data, err := json.Marshal(record)
+	if err != nil {
+		return fmt.Errorf("failed to marshal record: %w", err)
+	}
+	if _, err = file.Write(append(data, '\n')); err != nil {
+		return fmt.Errorf("failed to write record to file: %w", err)
+	}
+
+	return nil
 }
 
 func generateShortID() (string, error) {
@@ -40,6 +131,13 @@ func generateShortID() (string, error) {
 		return "", fmt.Errorf("failed to generate short ID: %w", err)
 	}
 	return base64.URLEncoding.EncodeToString(bytes), nil
+}
+
+func (us *URLShortener) getNextUUID() string {
+	uuid := us.nextUUID
+	us.nextUUID++
+
+	return strconv.Itoa(uuid)
 }
 
 func (us *URLShortener) shortenURL(originalURL string) (string, error) {
@@ -67,6 +165,13 @@ func (us *URLShortener) shortenURL(originalURL string) (string, error) {
 
 	us.urls[shortID] = originalURL
 	us.shortened[originalURL] = shortID
+
+	uuid := us.getNextUUID()
+	go func(uuid, shortID, originalURL string) {
+		if err := us.saveURLsToFile(uuid, shortID, originalURL); err != nil {
+			fmt.Printf("failed to save URLs to file: %v", err)
+		}
+	}(uuid, shortID, originalURL)
 
 	return fmt.Sprintf("%s%s", us.baseURL, shortID), nil
 }

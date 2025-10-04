@@ -23,7 +23,7 @@ func main() {
 
 	port := strings.Split(cfg.ServerAddr, ":")[1]
 
-	shortener := handler.NewURLShortener(cfg.BaseURL)
+	shortener := handler.NewURLShortener(cfg.BaseURL, cfg.Filename)
 
 	logger.Sugar.Infow(
 		"Starting server",

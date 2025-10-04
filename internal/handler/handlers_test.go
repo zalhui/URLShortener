@@ -51,7 +51,7 @@ func TestShortenURLHandler(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			us := NewURLShortener("http://localhost:8080/")
+			us := NewURLShortener("http://localhost:8080/", "")
 			r := us.URLRouter()
 
 			req, err := http.NewRequest(tt.method, "/", bytes.NewBufferString(tt.body))
@@ -69,7 +69,7 @@ func TestShortenURLHandler(t *testing.T) {
 }
 
 func TestGetOriginalURLHandler(t *testing.T) {
-	shortener := NewURLShortener("http://localhost:8080/")
+	shortener := NewURLShortener("http://localhost:8080/", "")
 
 	shortener.urls["123"] = "https://google.com"
 
@@ -157,7 +157,7 @@ func TestJSONShortenHandler(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			us := NewURLShortener("http://localhost:8080/")
+			us := NewURLShortener("http://localhost:8080/", "")
 			r := us.URLRouter()
 
 			req, err := http.NewRequest(tt.method, "/api/shorten", bytes.NewBufferString(tt.body))
