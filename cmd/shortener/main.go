@@ -6,8 +6,10 @@ import (
 	"strings"
 
 	"github.com/zalhui/URLShortener/internal/config"
-	"github.com/zalhui/URLShortener/internal/handler"
+	"github.com/zalhui/URLShortener/internal/delivery/http/handler"
 	"github.com/zalhui/URLShortener/internal/logger"
+	"github.com/zalhui/URLShortener/internal/repository"
+	"github.com/zalhui/URLShortener/internal/service"
 )
 
 func main() {
@@ -18,12 +20,26 @@ func main() {
 
 	cfg := config.NewConfig()
 	if err := cfg.LoadConfig(); err != nil {
-		log.Fatal(err)
+		logger.Sugar.Fatalw("failed to load config", "error", err)
 	}
 
 	port := strings.Split(cfg.ServerAddr, ":")[1]
 
-	shortener := handler.NewURLShortener(cfg.BaseURL, cfg.Filename)
+	var repo repository.URLRepository
+	if cfg.Filename != "" {
+		var err error
+		repo, err = repository.NewFileRepository(cfg.Filename)
+		if err != nil {
+			logger.Sugar.Fatalw("failed to create repository", "error", err)
+		}
+
+	} else {
+		repo = repository.NewMemoryRepository()
+	}
+	defer repo.Close()
+
+	shortenerService := service.NewShortenerService(repo, cfg.BaseURL)
+	shortener := handler.NewShortenHandler(shortenerService)
 
 	logger.Sugar.Infow(
 		"Starting server",
