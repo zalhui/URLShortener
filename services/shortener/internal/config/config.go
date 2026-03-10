@@ -51,11 +51,11 @@ func (c *Config) LoadFromEnv() error {
 }
 
 func (c *Config) LoadConfig() error {
-	c.ParseFlags()
-
 	if err := c.LoadFromEnv(); err != nil {
 		return err
 	}
+
+	c.ParseFlags()
 
 	return nil
 }

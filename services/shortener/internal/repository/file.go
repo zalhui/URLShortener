@@ -2,6 +2,7 @@ package repository
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -11,29 +12,101 @@ import (
 )
 
 type FileRepository struct {
-	*MemoryRepository
-	fileMu   sync.Mutex
-	filename string
+	mu        sync.RWMutex
+	fileMu    sync.Mutex
+	filename  string
+	urls      map[string]*entity.URL
+	shortened map[string]*entity.URL
 }
 
 func NewFileRepository(filename string) (*FileRepository, error) {
 	repo := &FileRepository{
-		MemoryRepository: NewMemoryRepository(),
-		filename:         filename,
+		filename:  filename,
+		urls:      make(map[string]*entity.URL),
+		shortened: make(map[string]*entity.URL),
 	}
 
 	if err := repo.LoadFromFile(filename); err != nil {
 		return nil, err
 	}
+
 	return repo, nil
 }
 
-func (f *FileRepository) Save(url *entity.URL) error {
-	if err := f.MemoryRepository.Save(url); err != nil {
-		return err
+func (f *FileRepository) Save(_ context.Context, url *entity.URL) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	if _, exists := f.urls[url.UUID]; exists {
+		return ErrDuplicateShortID
+	}
+	if _, exists := f.shortened[userScopedKey(url.UserID, url.OriginalURL)]; exists {
+		return ErrDuplicateOriginalURL
 	}
 
-	return f.SaveToFile(url)
+	recordCopy := *url
+	f.urls[url.UUID] = &recordCopy
+	f.shortened[userScopedKey(url.UserID, url.OriginalURL)] = &recordCopy
+
+	return f.saveToFile(&recordCopy)
+}
+
+func (f *FileRepository) GetByShortID(_ context.Context, shortID string) (*entity.URL, error) {
+	f.mu.RLock()
+	defer f.mu.RUnlock()
+
+	url, exists := f.urls[shortID]
+	if !exists {
+		return nil, nil
+	}
+
+	recordCopy := *url
+	return &recordCopy, nil
+}
+
+func (f *FileRepository) GetByOriginalURL(_ context.Context, userID, originalURL string) (*entity.URL, error) {
+	f.mu.RLock()
+	defer f.mu.RUnlock()
+
+	url, exists := f.shortened[userScopedKey(userID, originalURL)]
+	if !exists {
+		return nil, nil
+	}
+
+	recordCopy := *url
+	return &recordCopy, nil
+}
+
+func (f *FileRepository) ListByUser(_ context.Context, userID string) ([]*entity.URL, error) {
+	f.mu.RLock()
+	defer f.mu.RUnlock()
+
+	urls := make([]*entity.URL, 0)
+	for _, url := range f.urls {
+		if url.UserID != userID {
+			continue
+		}
+
+		recordCopy := *url
+		urls = append(urls, &recordCopy)
+	}
+
+	return urls, nil
+}
+
+func (f *FileRepository) DeleteByShortID(_ context.Context, userID, shortID string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	url, exists := f.urls[shortID]
+	if !exists || url.UserID != userID {
+		return nil
+	}
+
+	delete(f.urls, shortID)
+	delete(f.shortened, userScopedKey(userID, url.OriginalURL))
+
+	return nil
 }
 
 func (f *FileRepository) LoadFromFile(filename string) error {
@@ -55,7 +128,7 @@ func (f *FileRepository) LoadFromFile(filename string) error {
 
 		recordCopy := record
 		f.urls[record.UUID] = &recordCopy
-		f.shortened[record.OriginalURL] = &recordCopy
+		f.shortened[userScopedKey(record.UserID, record.OriginalURL)] = &recordCopy
 	}
 
 	if err := scanner.Err(); err != nil {
@@ -65,7 +138,7 @@ func (f *FileRepository) LoadFromFile(filename string) error {
 	return nil
 }
 
-func (f *FileRepository) SaveToFile(url *entity.URL) error {
+func (f *FileRepository) saveToFile(url *entity.URL) error {
 	if f.filename == "" {
 		return nil
 	}
@@ -73,7 +146,7 @@ func (f *FileRepository) SaveToFile(url *entity.URL) error {
 	f.fileMu.Lock()
 	defer f.fileMu.Unlock()
 
-	file, err := os.OpenFile(f.filename, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	file, err := os.OpenFile(f.filename, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
 	if err != nil {
 		return fmt.Errorf("failed to open file: %w", err)
 	}
@@ -86,9 +159,14 @@ func (f *FileRepository) SaveToFile(url *entity.URL) error {
 	if _, err = file.Write(append(data, '\n')); err != nil {
 		return fmt.Errorf("failed to write record to file: %w", err)
 	}
+
 	return nil
 }
 
 func (f *FileRepository) Close() error {
 	return nil
+}
+
+func userScopedKey(userID, originalURL string) string {
+	return userID + "|" + originalURL
 }

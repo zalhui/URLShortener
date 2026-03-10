@@ -45,54 +45,62 @@ func (s *ShortenerService) Ping(ctx context.Context) error {
 	return s.pinger.Ping(ctx)
 }
 
-func (s *ShortenerService) ShortenURL(originalURL string) (*entity.URL, error) {
+func (s *ShortenerService) ShortenURL(ctx context.Context, userID, originalURL string) (*entity.URL, error) {
 	normalizedURL, err := normalizeURL(originalURL)
 	if err != nil {
 		return nil, err
 	}
 
-	if exists, err := s.repo.GetByOriginalURL(normalizedURL); err != nil {
+	if exists, err := s.repo.GetByOriginalURL(ctx, userID, normalizedURL); err != nil {
 		return nil, err
 	} else if exists != nil {
 		return exists, nil
 	}
 
-	shortID, err := generateShortID()
-	if err != nil {
-		return nil, err
-	}
-
 	for {
-		exists, err := s.repo.GetByShortID(shortID)
+		shortID, err := generateShortID()
 		if err != nil {
 			return nil, err
 		}
-		if exists == nil {
-			break
-		}
 
-		shortID, err = generateShortID()
+		exists, err := s.repo.GetByShortID(ctx, shortID)
 		if err != nil {
 			return nil, err
 		}
-	}
+		if exists != nil {
+			continue
+		}
 
-	url := &entity.URL{
-		UUID:        shortID,
-		ShortURL:    fmt.Sprintf("%s/%s", s.baseURL, shortID),
-		OriginalURL: normalizedURL,
-		CreatedAt:   time.Now().UTC(),
-	}
+		url := &entity.URL{
+			UUID:        shortID,
+			UserID:      userID,
+			ShortURL:    fmt.Sprintf("%s/%s", s.baseURL, shortID),
+			OriginalURL: normalizedURL,
+			CreatedAt:   time.Now().UTC(),
+		}
 
-	if err := s.repo.Save(url); err != nil {
-		return nil, err
+		err = s.repo.Save(ctx, url)
+		switch {
+		case err == nil:
+			return url, nil
+		case errors.Is(err, repository.ErrDuplicateOriginalURL):
+			existingURL, getErr := s.repo.GetByOriginalURL(ctx, userID, normalizedURL)
+			if getErr != nil {
+				return nil, getErr
+			}
+			if existingURL != nil {
+				return existingURL, nil
+			}
+		case errors.Is(err, repository.ErrDuplicateShortID):
+			continue
+		default:
+			return nil, err
+		}
 	}
-
-	return url, nil
 }
 
-func (s *ShortenerService) GetOriginalURL(shortID string) (string, error) {
-	url, err := s.repo.GetByShortID(shortID)
+func (s *ShortenerService) GetOriginalURL(ctx context.Context, shortID string) (string, error) {
+	url, err := s.repo.GetByShortID(ctx, shortID)
 	if err != nil {
 		return "", err
 	}
@@ -109,7 +117,8 @@ func generateShortID() (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("failed to generate short ID: %w", err)
 	}
-	return base64.URLEncoding.EncodeToString(bytes), nil
+
+	return base64.RawURLEncoding.EncodeToString(bytes), nil
 }
 
 func normalizeURL(rawURL string) (string, error) {

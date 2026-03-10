@@ -48,8 +48,8 @@ func main() {
 		}
 		defer db.Close()
 
-		if err := db.InitSchema(ctx); err != nil {
-			logger.Sugar.Fatalw("failed to initialize schema", "error", err)
+		if err := db.Migrate(ctx); err != nil {
+			logger.Sugar.Fatalw("failed to run migrations", "error", err)
 		}
 
 		repo = repository.NewPostgresRepository(db)
@@ -60,7 +60,7 @@ func main() {
 			logger.Sugar.Fatalw("failed to create repository", "error", err)
 		}
 	} else {
-		repo = repository.NewMemoryRepository()
+		logger.Sugar.Fatal("repository configuration is missing: set FILE_STORAGE_PATH or database settings")
 	}
 	defer repo.Close()
 

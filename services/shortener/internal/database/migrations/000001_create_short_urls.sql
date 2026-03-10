@@ -1,0 +1,6 @@
+CREATE TABLE IF NOT EXISTS short_urls (
+    uuid TEXT PRIMARY KEY,
+    original_url TEXT NOT NULL UNIQUE,
+    short_url TEXT NOT NULL UNIQUE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);

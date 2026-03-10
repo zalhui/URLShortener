@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/zalhui/URLShortener/internal/config/db"
+	"github.com/zalhui/URLShortener/auth/internal/config/db"
 )
 
 type DB struct {
@@ -24,11 +24,11 @@ var migrationsFS embed.FS
 func NewDB(ctx context.Context, cfg *db.DBConfig) (*DB, error) {
 	pool, err := pgxpool.New(ctx, cfg.GetDBConnString())
 	if err != nil {
-		return nil, fmt.Errorf("NewDB failed to create pool: %w", err)
+		return nil, fmt.Errorf("failed to create pool: %w", err)
 	}
 
 	if err := pool.Ping(ctx); err != nil {
-		return nil, fmt.Errorf("NewDB failed to ping database: %w", err)
+		return nil, fmt.Errorf("failed to ping database: %w", err)
 	}
 
 	return &DB{Pool: pool}, nil
@@ -53,8 +53,8 @@ func (db *DB) Migrate(ctx context.Context) error {
 
 	if _, err := db.Pool.Exec(ctx, `
 CREATE TABLE IF NOT EXISTS schema_migrations (
-    version TEXT PRIMARY KEY,
-    applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+	version TEXT PRIMARY KEY,
+	applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 )`); err != nil {
 		return fmt.Errorf("failed to ensure schema_migrations table: %w", err)
 	}
@@ -74,11 +74,11 @@ CREATE TABLE IF NOT EXISTS schema_migrations (
 	sort.Strings(versions)
 
 	for _, version := range versions {
-		var alreadyApplied bool
-		if err := db.Pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM schema_migrations WHERE version = $1)`, version).Scan(&alreadyApplied); err != nil {
+		var exists bool
+		if err := db.Pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM schema_migrations WHERE version = $1)`, version).Scan(&exists); err != nil {
 			return fmt.Errorf("failed to check migration %s: %w", version, err)
 		}
-		if alreadyApplied {
+		if exists {
 			continue
 		}
 

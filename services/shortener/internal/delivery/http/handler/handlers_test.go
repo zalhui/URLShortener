@@ -2,13 +2,14 @@ package handler
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
+	"github.com/zalhui/URLShortener/internal/entity"
 	"github.com/zalhui/URLShortener/internal/logger"
-	"github.com/zalhui/URLShortener/internal/repository"
 	"github.com/zalhui/URLShortener/internal/service"
 )
 
@@ -86,7 +87,7 @@ func TestGetOriginalURLHandler(t *testing.T) {
 	logger.InitTest()
 
 	h := newTestHandler()
-	shortened, err := h.service.ShortenURL("https://google.com")
+	shortened, err := h.service.ShortenURL(context.Background(), "", "https://google.com")
 	if err != nil {
 		t.Fatalf("ShortenURL() error = %v", err)
 	}
@@ -210,7 +211,70 @@ func TestJSONShortenHandler(t *testing.T) {
 }
 
 func newTestHandler() *ShortenHandler {
-	repo := repository.NewMemoryRepository()
+	repo := newStubURLRepository()
 	svc := service.NewShortenerService(repo, "http://localhost:8080", nil)
 	return NewShortenHandler(svc)
+}
+
+type stubURLRepository struct {
+	urls      map[string]*entity.URL
+	shortened map[string]*entity.URL
+}
+
+func newStubURLRepository() *stubURLRepository {
+	return &stubURLRepository{
+		urls:      make(map[string]*entity.URL),
+		shortened: make(map[string]*entity.URL),
+	}
+}
+
+func (s *stubURLRepository) Save(_ context.Context, url *entity.URL) error {
+	recordCopy := *url
+	s.urls[url.UUID] = &recordCopy
+	s.shortened[url.UserID+"|"+url.OriginalURL] = &recordCopy
+	return nil
+}
+
+func (s *stubURLRepository) GetByShortID(_ context.Context, shortID string) (*entity.URL, error) {
+	url, exists := s.urls[shortID]
+	if !exists {
+		return nil, nil
+	}
+	recordCopy := *url
+	return &recordCopy, nil
+}
+
+func (s *stubURLRepository) GetByOriginalURL(_ context.Context, userID, originalURL string) (*entity.URL, error) {
+	url, exists := s.shortened[userID+"|"+originalURL]
+	if !exists {
+		return nil, nil
+	}
+	recordCopy := *url
+	return &recordCopy, nil
+}
+
+func (s *stubURLRepository) ListByUser(_ context.Context, userID string) ([]*entity.URL, error) {
+	urls := make([]*entity.URL, 0)
+	for _, url := range s.urls {
+		if url.UserID != userID {
+			continue
+		}
+		recordCopy := *url
+		urls = append(urls, &recordCopy)
+	}
+	return urls, nil
+}
+
+func (s *stubURLRepository) DeleteByShortID(_ context.Context, userID, shortID string) error {
+	url, exists := s.urls[shortID]
+	if !exists || url.UserID != userID {
+		return nil
+	}
+	delete(s.urls, shortID)
+	delete(s.shortened, userID+"|"+url.OriginalURL)
+	return nil
+}
+
+func (s *stubURLRepository) Close() error {
+	return nil
 }

@@ -14,7 +14,10 @@ const (
 
 type contextKey string
 
-const RequestIDKey contextKey = "x-request-id"
+const (
+	RequestIDKey contextKey = "x-request-id"
+	UserIDKey    contextKey = "user-id"
+)
 
 func ContextMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -33,4 +36,13 @@ func ContextMiddleware(next http.Handler) http.Handler {
 func generateRequestID() string {
 	id := uuid.New().String()
 	return id
+}
+
+func WithUserID(ctx context.Context, userID string) context.Context {
+	return context.WithValue(ctx, UserIDKey, userID)
+}
+
+func UserIDFromContext(ctx context.Context) string {
+	userID, _ := ctx.Value(UserIDKey).(string)
+	return userID
 }
