@@ -30,7 +30,7 @@ func (r *loggingResponseWriter) Write(b []byte) (int, error) {
 	return size, err
 }
 
-func LoggingMidlleware(next http.Handler) http.Handler {
+func LoggingMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
 
@@ -49,10 +49,18 @@ func LoggingMidlleware(next http.Handler) http.Handler {
 		logger.Sugar.Infoln(
 			"uri", r.RequestURI,
 			"method", r.Method,
-			"status", wr.data.status,
+			"status", statusOrDefault(wr.data.status),
 			"size", wr.data.size,
 			"duration", duration,
 		)
 
 	})
+}
+
+func statusOrDefault(status int) int {
+	if status == 0 {
+		return http.StatusOK
+	}
+
+	return status
 }

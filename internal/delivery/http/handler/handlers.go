@@ -2,12 +2,12 @@ package handler
 
 import (
 	"encoding/json"
+	"errors"
 	"io"
+	"mime"
 	"net/http"
-	"strings"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/zalhui/URLShortener/internal/delivery/http/middleware"
 	"github.com/zalhui/URLShortener/internal/entity"
 	"github.com/zalhui/URLShortener/internal/service"
 )
@@ -22,21 +22,32 @@ func NewShortenHandler(service *service.ShortenerService) *ShortenHandler {
 	}
 }
 
+func (h *ShortenHandler) PingHandler(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	err := h.service.Ping(ctx)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+}
+
 func (h *ShortenHandler) shortenURLHandler(w http.ResponseWriter, r *http.Request) {
-	if r.Header.Get("Content-Type") != "text/plain" {
-		http.Error(w, "Unsupported Content-Type", http.StatusBadRequest)
+	if !hasContentType(r, "text/plain") {
+		http.Error(w, "unsupported Content-Type", http.StatusBadRequest)
 		return
 	}
 
 	originalURL, err := io.ReadAll(r.Body)
 	if err != nil || len(originalURL) == 0 {
-		http.Error(w, "Failed to read request body", http.StatusBadRequest)
+		http.Error(w, "failed to read request body", http.StatusBadRequest)
 		return
 	}
 
 	url, err := h.service.ShortenURL(string(originalURL))
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		h.writeServiceError(w, err)
 		return
 	}
 
@@ -50,13 +61,13 @@ func (h *ShortenHandler) getOriginalURLHandler(w http.ResponseWriter, r *http.Re
 
 	originalURL, err := h.service.GetOriginalURL(shortID)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusNotFound)
-		return
-	}
+		if errors.Is(err, service.ErrNotFound) {
+			http.Error(w, "short url not found", http.StatusNotFound)
+			return
+		}
 
-	//ensure that the original URL starts with http:// or https://
-	if !strings.HasPrefix(originalURL, "http://") && !strings.HasPrefix(originalURL, "https://") {
-		originalURL = "https://" + originalURL
+		http.Error(w, "failed to resolve short url", http.StatusInternalServerError)
+		return
 	}
 
 	w.Header().Set("Location", originalURL)
@@ -64,36 +75,60 @@ func (h *ShortenHandler) getOriginalURLHandler(w http.ResponseWriter, r *http.Re
 }
 
 func (h *ShortenHandler) jsonShortenHandler(w http.ResponseWriter, r *http.Request) {
-	if r.Header.Get("content-type") != "application/json" {
-		http.Error(w, "Unsupported content-type", http.StatusBadRequest)
+	if !hasContentType(r, "application/json") {
+		http.Error(w, "unsupported Content-Type", http.StatusBadRequest)
 		return
 	}
 
 	var req entity.ShortenRequest
 	err := json.NewDecoder(r.Body).Decode(&req)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		http.Error(w, "invalid JSON body", http.StatusBadRequest)
 		return
 	}
 
 	url, err := h.service.ShortenURL(req.URL)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		h.writeServiceError(w, err)
 		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(entity.ShortenResponse{Result: url.ShortURL})
+	if err := json.NewEncoder(w).Encode(entity.ShortenResponse{Result: url.ShortURL}); err != nil {
+		http.Error(w, "failed to encode response", http.StatusInternalServerError)
+	}
 
 }
 
 func (h *ShortenHandler) URLRouter() chi.Router {
 	r := chi.NewRouter()
 
-	r.Use(middleware.LoggingMidlleware)
 	r.Get("/{shortID}", h.getOriginalURLHandler)
 	r.Post("/", h.shortenURLHandler)
 	r.Post("/api/shorten", h.jsonShortenHandler)
 	return r
+}
+
+func (h *ShortenHandler) writeServiceError(w http.ResponseWriter, err error) {
+	switch {
+	case errors.Is(err, service.ErrInvalidURL):
+		http.Error(w, "invalid url", http.StatusBadRequest)
+	default:
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+	}
+}
+
+func hasContentType(r *http.Request, expected string) bool {
+	contentType := r.Header.Get("Content-Type")
+	if contentType == "" {
+		return false
+	}
+
+	mediaType, _, err := mime.ParseMediaType(contentType)
+	if err != nil {
+		return false
+	}
+
+	return mediaType == expected
 }

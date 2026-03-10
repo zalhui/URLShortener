@@ -12,7 +12,7 @@ import (
 
 type FileRepository struct {
 	*MemoryRepository
-	mu       sync.RWMutex
+	fileMu   sync.Mutex
 	filename string
 }
 
@@ -29,19 +29,14 @@ func NewFileRepository(filename string) (*FileRepository, error) {
 }
 
 func (f *FileRepository) Save(url *entity.URL) error {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	err := f.MemoryRepository.Save(url)
-	if err != nil {
+	if err := f.MemoryRepository.Save(url); err != nil {
 		return err
 	}
+
 	return f.SaveToFile(url)
 }
 
 func (f *FileRepository) LoadFromFile(filename string) error {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-
 	file, err := os.Open(filename)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -58,8 +53,9 @@ func (f *FileRepository) LoadFromFile(filename string) error {
 			return fmt.Errorf("failed to unmarshal record: %w", err)
 		}
 
-		f.urls[record.ShortURL] = &record
-		f.shortened[record.OriginalURL] = &record
+		recordCopy := record
+		f.urls[record.UUID] = &recordCopy
+		f.shortened[record.OriginalURL] = &recordCopy
 	}
 
 	if err := scanner.Err(); err != nil {
@@ -74,10 +70,10 @@ func (f *FileRepository) SaveToFile(url *entity.URL) error {
 		return nil
 	}
 
-	f.mu.RLock()
-	defer f.mu.RUnlock()
+	f.fileMu.Lock()
+	defer f.fileMu.Unlock()
 
-	file, err := os.OpenFile(f.filename, os.O_TRUNC|os.O_CREATE|os.O_WRONLY, 0644)
+	file, err := os.OpenFile(f.filename, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
 		return fmt.Errorf("failed to open file: %w", err)
 	}
@@ -94,7 +90,5 @@ func (f *FileRepository) SaveToFile(url *entity.URL) error {
 }
 
 func (f *FileRepository) Close() error {
-	f.mu.Lock()
-	defer f.mu.Unlock()
 	return nil
 }

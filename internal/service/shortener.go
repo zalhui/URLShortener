@@ -1,9 +1,12 @@
 package service
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/base64"
+	"errors"
 	"fmt"
+	"net/url"
 	"strings"
 	"time"
 
@@ -11,20 +14,46 @@ import (
 	"github.com/zalhui/URLShortener/internal/repository"
 )
 
+var (
+	ErrNotFound   = errors.New("url not found")
+	ErrInvalidURL = errors.New("invalid url")
+)
+
+type Pinger interface {
+	Ping(context.Context) error
+}
+
 type ShortenerService struct {
+	pinger  Pinger
 	repo    repository.URLRepository
 	baseURL string
 }
 
-func NewShortenerService(repo repository.URLRepository, baseURL string) *ShortenerService {
+func NewShortenerService(repo repository.URLRepository, baseURL string, pinger Pinger) *ShortenerService {
 	return &ShortenerService{
 		repo:    repo,
 		baseURL: strings.TrimSuffix(baseURL, "/"),
+		pinger:  pinger,
 	}
 }
 
+func (s *ShortenerService) Ping(ctx context.Context) error {
+	if s.pinger == nil {
+		return nil
+	}
+
+	return s.pinger.Ping(ctx)
+}
+
 func (s *ShortenerService) ShortenURL(originalURL string) (*entity.URL, error) {
-	if exists, _ := s.repo.GetByOriginalURL(originalURL); exists != nil {
+	normalizedURL, err := normalizeURL(originalURL)
+	if err != nil {
+		return nil, err
+	}
+
+	if exists, err := s.repo.GetByOriginalURL(normalizedURL); err != nil {
+		return nil, err
+	} else if exists != nil {
 		return exists, nil
 	}
 
@@ -34,9 +63,14 @@ func (s *ShortenerService) ShortenURL(originalURL string) (*entity.URL, error) {
 	}
 
 	for {
-		if exists, _ := s.repo.GetByShortID(shortID); exists == nil {
+		exists, err := s.repo.GetByShortID(shortID)
+		if err != nil {
+			return nil, err
+		}
+		if exists == nil {
 			break
 		}
+
 		shortID, err = generateShortID()
 		if err != nil {
 			return nil, err
@@ -46,7 +80,7 @@ func (s *ShortenerService) ShortenURL(originalURL string) (*entity.URL, error) {
 	url := &entity.URL{
 		UUID:        shortID,
 		ShortURL:    fmt.Sprintf("%s/%s", s.baseURL, shortID),
-		OriginalURL: originalURL,
+		OriginalURL: normalizedURL,
 		CreatedAt:   time.Now().UTC(),
 	}
 
@@ -62,6 +96,10 @@ func (s *ShortenerService) GetOriginalURL(shortID string) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	if url == nil {
+		return "", ErrNotFound
+	}
+
 	return url.OriginalURL, nil
 }
 
@@ -72,4 +110,22 @@ func generateShortID() (string, error) {
 		return "", fmt.Errorf("failed to generate short ID: %w", err)
 	}
 	return base64.URLEncoding.EncodeToString(bytes), nil
+}
+
+func normalizeURL(rawURL string) (string, error) {
+	trimmed := strings.TrimSpace(rawURL)
+	if trimmed == "" {
+		return "", ErrInvalidURL
+	}
+
+	if !strings.HasPrefix(trimmed, "http://") && !strings.HasPrefix(trimmed, "https://") {
+		trimmed = "https://" + trimmed
+	}
+
+	parsed, err := url.ParseRequestURI(trimmed)
+	if err != nil || parsed.Host == "" {
+		return "", ErrInvalidURL
+	}
+
+	return parsed.String(), nil
 }
