@@ -35,22 +35,10 @@ func main() {
 		logger.Sugar.Fatalw("failed to load config", "error", err)
 	}
 
-	var repo repository.URLRepository
-	if cfg.Filename != "" {
-		var err error
-		repo, err = repository.NewFileRepository(cfg.Filename)
-		if err != nil {
-			logger.Sugar.Fatalw("failed to create repository", "error", err)
-		}
-
-	} else {
-		repo = repository.NewMemoryRepository()
-	}
-	defer repo.Close()
-
 	ctx := context.Background()
-
 	dbCfg := dbconfig.Load()
+
+	var repo repository.URLRepository
 	var db *database.DB
 	if dbCfg.Enabled() {
 		var err error
@@ -59,7 +47,22 @@ func main() {
 			logger.Sugar.Fatalw("failed to create database", "error", err)
 		}
 		defer db.Close()
+
+		if err := db.InitSchema(ctx); err != nil {
+			logger.Sugar.Fatalw("failed to initialize schema", "error", err)
+		}
+
+		repo = repository.NewPostgresRepository(db)
+	} else if cfg.Filename != "" {
+		var err error
+		repo, err = repository.NewFileRepository(cfg.Filename)
+		if err != nil {
+			logger.Sugar.Fatalw("failed to create repository", "error", err)
+		}
+	} else {
+		repo = repository.NewMemoryRepository()
 	}
+	defer repo.Close()
 
 	shortenerService := service.NewShortenerService(repo, cfg.BaseURL, db)
 	shortener := handler.NewShortenHandler(shortenerService)

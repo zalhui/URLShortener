@@ -15,6 +15,14 @@ type DB struct {
 
 const (
 	defaultTimeout = 5 * time.Second
+	initSchemaSQL  = `
+CREATE TABLE IF NOT EXISTS short_urls (
+    uuid TEXT PRIMARY KEY,
+    original_url TEXT NOT NULL UNIQUE,
+    short_url TEXT NOT NULL UNIQUE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+`
 )
 
 func NewDB(ctx context.Context, cfg *db.DBConfig) (*DB, error) {
@@ -41,4 +49,15 @@ func (db *DB) Ping(ctx context.Context) error {
 	defer cancel()
 
 	return db.Pool.Ping(ctx)
+}
+
+func (db *DB) InitSchema(ctx context.Context) error {
+	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
+	defer cancel()
+
+	if _, err := db.Pool.Exec(ctx, initSchemaSQL); err != nil {
+		return fmt.Errorf("failed to initialize schema: %w", err)
+	}
+
+	return nil
 }
