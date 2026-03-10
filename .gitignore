@@ -1,0 +1,30 @@
+# Бинарные файлы
+/bin/
+/main
+/myapp
+/app
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Файлы приложения
+*.log
+*.json
+*.txt
+/tmp/
+
+# Файлы зависимостей
+go.sum
+/go.mod~
+
+# IDE файлы
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS файлы
+.DS_Store
+Thumbs.db

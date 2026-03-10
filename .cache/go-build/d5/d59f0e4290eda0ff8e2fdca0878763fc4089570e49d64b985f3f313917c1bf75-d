@@ -1,0 +1,3 @@
+./compress.go
+./logging.go
+./withcontext.go
