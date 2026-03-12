@@ -15,8 +15,10 @@ import (
 )
 
 var (
-	ErrNotFound   = errors.New("url not found")
-	ErrInvalidURL = errors.New("invalid url")
+	ErrNotFound     = errors.New("url not found")
+	ErrInvalidURL   = errors.New("invalid url")
+	ErrForbidden    = errors.New("forbidden")
+	ErrUnauthorized = errors.New("unauthorized")
 )
 
 type Pinger interface {
@@ -46,6 +48,10 @@ func (s *ShortenerService) Ping(ctx context.Context) error {
 }
 
 func (s *ShortenerService) ShortenURL(ctx context.Context, userID, originalURL string) (*entity.URL, error) {
+	if userID == "" {
+		return nil, ErrUnauthorized
+	}
+
 	normalizedURL, err := normalizeURL(originalURL)
 	if err != nil {
 		return nil, err
@@ -109,6 +115,33 @@ func (s *ShortenerService) GetOriginalURL(ctx context.Context, shortID string) (
 	}
 
 	return url.OriginalURL, nil
+}
+
+func (s *ShortenerService) ListUserURLs(ctx context.Context, userID string) ([]*entity.URL, error) {
+	if userID == "" {
+		return nil, ErrUnauthorized
+	}
+
+	return s.repo.ListByUser(ctx, userID)
+}
+
+func (s *ShortenerService) DeleteURL(ctx context.Context, userID, shortID string) error {
+	if userID == "" {
+		return ErrUnauthorized
+	}
+
+	url, err := s.repo.GetByShortID(ctx, shortID)
+	if err != nil {
+		return err
+	}
+	if url == nil {
+		return ErrNotFound
+	}
+	if url.UserID != userID {
+		return ErrForbidden
+	}
+
+	return s.repo.DeleteByShortID(ctx, userID, shortID)
 }
 
 func generateShortID() (string, error) {

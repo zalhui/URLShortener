@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	shortenerauth "github.com/zalhui/URLShortener/internal/auth"
 	"github.com/zalhui/URLShortener/internal/config"
 	dbconfig "github.com/zalhui/URLShortener/internal/config/db"
 	"github.com/zalhui/URLShortener/internal/database"
@@ -64,8 +65,13 @@ func main() {
 	}
 	defer repo.Close()
 
+	accessTokenVerifier, err := shortenerauth.NewVerifier(cfg.AuthSecret, cfg.AuthIssuer)
+	if err != nil {
+		logger.Sugar.Fatalw("failed to initialize auth verifier", "error", err)
+	}
+
 	shortenerService := service.NewShortenerService(repo, cfg.BaseURL, db)
-	shortener := handler.NewShortenHandler(shortenerService)
+	shortener := handler.NewShortenHandler(shortenerService, middleware.RequireAuth(accessTokenVerifier))
 
 	r := chi.NewRouter()
 

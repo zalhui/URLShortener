@@ -106,7 +106,7 @@ func (f *FileRepository) DeleteByShortID(_ context.Context, userID, shortID stri
 	delete(f.urls, shortID)
 	delete(f.shortened, userScopedKey(userID, url.OriginalURL))
 
-	return nil
+	return f.rewriteFile()
 }
 
 func (f *FileRepository) LoadFromFile(filename string) error {
@@ -158,6 +158,30 @@ func (f *FileRepository) saveToFile(url *entity.URL) error {
 	}
 	if _, err = file.Write(append(data, '\n')); err != nil {
 		return fmt.Errorf("failed to write record to file: %w", err)
+	}
+
+	return nil
+}
+
+func (f *FileRepository) rewriteFile() error {
+	if f.filename == "" {
+		return nil
+	}
+
+	f.fileMu.Lock()
+	defer f.fileMu.Unlock()
+
+	file, err := os.OpenFile(f.filename, os.O_TRUNC|os.O_CREATE|os.O_WRONLY, 0o644)
+	if err != nil {
+		return fmt.Errorf("failed to open file for rewrite: %w", err)
+	}
+	defer file.Close()
+
+	encoder := json.NewEncoder(file)
+	for _, url := range f.urls {
+		if err := encoder.Encode(url); err != nil {
+			return fmt.Errorf("failed to rewrite record: %w", err)
+		}
 	}
 
 	return nil
