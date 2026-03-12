@@ -3,6 +3,10 @@
 /main
 /myapp
 /app
+/shortener
+/auth
+/services/*/shortener
+/services/*/auth
 *.exe
 *.exe~
 *.dll
@@ -11,12 +15,10 @@
 
 # Файлы приложения
 *.log
-*.json
-*.txt
 /tmp/
+.cache/
 
 # Файлы зависимостей
-go.sum
 /go.mod~
 
 # IDE файлы
