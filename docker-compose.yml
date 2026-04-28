@@ -37,10 +37,12 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     environment:
       SERVER_ADDRESS: ":8080"
       BASE_URL: "http://localhost:3000"
-      DATABASE_DSN: "postgres://shortener:shortener@postgres:5432/shortener?sslmode=disable"
+      DATABASE_DSN: "postgres://shortener:shortener@host.docker.internal:5433/shortener?sslmode=disable"
       AUTH_ISSUER: "auth-service"
       AUTH_ACCESS_TOKEN_SECRET: "change-me-to-a-long-random-secret-at-least-32-chars"
     ports:
@@ -59,11 +61,13 @@ services:
     depends_on:
       auth-postgres:
         condition: service_healthy
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     environment:
       AUTH_SERVER_ADDRESS: ":8081"
       AUTH_ISSUER: "auth-service"
       AUTH_ACCESS_TOKEN_SECRET: "change-me-to-a-long-random-secret-at-least-32-chars"
-      AUTH_DATABASE_DSN: "postgres://auth:auth@auth-postgres:5432/auth?sslmode=disable"
+      AUTH_DATABASE_DSN: "postgres://auth:auth@host.docker.internal:5434/auth?sslmode=disable"
       AUTH_COOKIE_SECURE: "false"
     ports:
       - "8081:8081"
